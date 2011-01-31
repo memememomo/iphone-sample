@@ -8,6 +8,7 @@
 
 #import "TableSample.h"
 
+static int ROWS_IN_PAGE = 2;
 
 @implementation TableSample
 
@@ -18,6 +19,7 @@
 
 - (void)dealloc 
 {
+	[segment_ release];
 	[simpleCoreData_ release];
 	[super dealloc];
 }
@@ -53,6 +55,7 @@
 {
 	[super viewDidLoad];
 	
+
 	// CoreDataの初期化	
 	SimpleCoreDataFactory *factory = [SimpleCoreDataFactory sharedCoreData];
 	NSFetchRequest *request = [factory createRequest:@"data_source"];
@@ -61,48 +64,37 @@
 						   forKeys:[NSArray arrayWithObjects:@"timeStamp", nil]]
 						  autorelease];
 	[factory setSortDescriptors:request AndSort:sort];
-	NSFetchedResultsController *fetchedResultController = [factory fetchedResultsController:request 
-																	  AndSectionNameKeyPath:nil];
+	NSFetchedResultsController *fetchedResultController = [factory fetchedResultsController:request AndSectionNameKeyPath:nil];
 	simpleCoreData_ = [factory createSimpleCoreData:fetchedResultController];
 	[simpleCoreData_ retain];
 	
 	
-	// 検索バー
-	UISearchBar *searchBar = [[[UISearchBar alloc] init] autorelease];
-	searchBar.frame = CGRectMake( 0, 0, self.tableView.bounds.size.width, 0);
-	searchBar.delegate = self;
-	searchBar.placeholder = @"search";
-	[searchBar sizeToFit];
-	self.navigationItem.titleView = searchBar;
+	// ページ移動のスイッチ
+	NSArray *items = [NSArray arrayWithObjects:@"<", @">", nil];
+	segment_ = [[[UISegmentedControl alloc] initWithItems:items] autorelease];
+	segment_.frame = CGRectMake( 0, 0, 40, 30);
+	segment_.selectedSegmentIndex = UISegmentedControlNoSegment;
+	segment_.segmentedControlStyle = UISegmentedControlStyleBar;
+	segment_.momentary = YES;
+	[segment_ addTarget:self
+				 action:@selector(segmentedControlClicked:)
+	   forControlEvents:UIControlEventValueChanged];
 	
-	searching_ = NO;
-	letUserSelectRow_ = YES;
-
+	UIBarButtonItem *barButton = [[[UIBarButtonItem alloc] 
+								   initWithCustomView:segment_]
+								  autorelease];
+	self.navigationItem.rightBarButtonItem = barButton;
+	
+	[self updateSegment:segment_];
+	
+	
+	// ページ番号を初期化
+	page_ = 0;
+	
 	
 	// テストデータを作る
 	[self deleteTestData];
 	[self insertTestData];
-}
-
-
-/*
- * セクション数を返す
- */
-
-- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
-{
-	return [[simpleCoreData_.fetchedResultsController sections] count];
-}
-
-
-/*
- * セクション名を返す
- */
-
-- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
-{
-	id<NSFetchedResultsSectionInfo> sectionInfo = [[simpleCoreData_.fetchedResultsController sections] objectAtIndex:section];
-	return [sectionInfo name];
 }
 
 
@@ -112,8 +104,19 @@
 
 - (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section
 {
+	// データ数を取得
 	id<NSFetchedResultsSectionInfo> sectionInfo = [[simpleCoreData_.fetchedResultsController sections] objectAtIndex:section];
-	return [sectionInfo numberOfObjects];
+	NSInteger rows = [sectionInfo numberOfObjects];
+	
+	// セグメント情報を更新
+	[self updateSegment:segment_];
+	
+	// ページに応じて行数を変える
+	if (rows >= (page_ + 1) * ROWS_IN_PAGE) {
+		return ROWS_IN_PAGE;
+	} else {
+		return rows - page_ * ROWS_IN_PAGE;
+	}	
 }
 
 
@@ -137,8 +140,14 @@ cellForRowAtIndexPath:(NSIndexPath*)indexPath
 		[cell autorelease];
 	}
 	
+	
+	// ページに応じて、indexPathを計算する
+	NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+	NSIndexPath *newIndexPath = [NSIndexPath indexPathForRow:row inSection:indexPath.section];
+
+	
 	// indexPathからデータを取得してくる
-	NSManagedObject *managedObject = [simpleCoreData_.fetchedResultsController objectAtIndexPath:indexPath];
+	NSManagedObject *managedObject = [simpleCoreData_.fetchedResultsController objectAtIndexPath:newIndexPath];
 
 	
 	// セクションにある項目の中のrow番目のデータを取得
@@ -195,7 +204,11 @@ cellForRowAtIndexPath:(NSIndexPath*)indexPath
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-	NSManagedObject *managedObject = [simpleCoreData_.fetchedResultsController objectAtIndexPath:indexPath];
+	// ページに応じて、indexPathを計算する
+	NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+	NSIndexPath *newIndexPath = [NSIndexPath indexPathForRow:row inSection:indexPath.section];
+	
+	NSManagedObject *managedObject = [simpleCoreData_.fetchedResultsController objectAtIndexPath:newIndexPath];
 	
 	NSString *message = [managedObject valueForKey:@"data"];
 	
@@ -219,15 +232,74 @@ commitEditingStyle:(UITableViewCellEditingStyle)editingStyle
 forRowAtIndexPath:(NSIndexPath *)indexPath
 {
 	if ( UITableViewCellEditingStyleDelete == editingStyle ) {
+		// ページに応じて、indexPathを計算する
+		NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+		NSIndexPath *newIndexPath = [NSIndexPath indexPathForRow:row inSection:indexPath.section];
+		
+		
 		// 削除
-		[simpleCoreData_ deleteObjectWithIndexPath:indexPath];
+		[simpleCoreData_ deleteObjectWithIndexPath:newIndexPath];
 		
-		// テーブルから該当セルを削除
-		[tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath]
-												  withRowAnimation:UITableViewRowAnimationFade];
+		// テーブルから該当セルを削除(TODO:うまく動かない、削除後のデータとページャのROWS_IN_PAGEの値があわないのが原因)
+		//[tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath]
+		//										  withRowAnimation:UITableViewRowAnimationFade];
 		
+		[self updateSegment:segment_];
+		
+		[tableView reloadData];
 	}
 }
+
+
+#pragma mark --- SegmentedControl Delegate ---
+#pragma mark ---------------------------------
+
+
+/*
+ * セグメントがタップされたときに呼び出される
+ */
+
+- (void)segmentedControlClicked:(id)sender 
+{
+	UISegmentedControl *segment = sender;
+	NSInteger selected = segment.selectedSegmentIndex;
+	
+	if (selected == 0) {
+		if (page_ > 0) {
+			page_--;
+		}
+	} else if (selected == 1) {
+		page_++;
+	}
+	
+	[self updateSegment:segment];
+	
+	[self.tableView reloadData];
+}
+
+
+/*
+ * セグメントの選択不可などの設定を更新する
+ */
+
+- (void)updateSegment:(UISegmentedControl*)segment
+{
+	if (page_ == 0) {
+		[segment setEnabled:NO forSegmentAtIndex:0];
+	} else {
+		[segment setEnabled:YES forSegmentAtIndex:0];
+	}
+	
+	
+	NSInteger rows = [simpleCoreData_ countObjects];
+	
+	if (rows <= (page_+1) * ROWS_IN_PAGE) {
+		[segment setEnabled:NO forSegmentAtIndex:1];
+	} else {
+		[segment setEnabled:YES forSegmentAtIndex:1];
+	}
+}
+
 
 
 /*
@@ -270,121 +342,6 @@ forRowAtIndexPath:(NSIndexPath *)indexPath
 }
 
 
-#pragma mark --- SearBarDelegate ---
-#pragma mark -----------------------
 
-/*
- * 検索キーワードを入力し始める
- */
-
-- (void)searchBarTextDidBeginEditing:(UISearchBar *)searchBar
-{
-	searching_ = YES;
-	letUserSelectRow_ = NO;
-	self.tableView.scrollEnabled = NO;
-	
-	if (overlayController_ == nil) {
-		overlayController_ = [[OverlayViewController alloc] init];
-	}
-	
-	// オーバーレイヤーの高さを計算
-	CGFloat height = self.tableView.contentSize.height;
-	if ( height < self.view.frame.size.height ) {
-		height = self.view.frame.size.height;
-	}
-	CGFloat yaxis = self.tableView.frame.origin.y;
-	CGFloat width = self.tableView.frame.size.width;
-	
-	
-	// オーバーレイヤ作成
-	CGRect frame = CGRectMake( 0, yaxis, width, height );
-	overlayController_.view.frame = frame;
-	overlayController_.view.backgroundColor = [UIColor grayColor];
-	overlayController_.view.alpha = 0.8;
-	overlayController_.rvController = self;
-	
-	page_ = 0;
-	
-	[self.tableView insertSubview:overlayController_.view aboveSubview:self.view];
-}
-
-
-/*
- * キーボードの「検索」が押されたとき
- */
-
-- (void)searchBarSearchButtonClicked:(UISearchBar *)searchBar
-{
-	[self searchKeyword:searchBar];
-}
-
-
-/*
- * 検索、現在はキーボードの「検索」が押されたときと、オーバーレイヤのビューがタップされたときに呼び出される
- */
-
-- (void)searchKeyword:(UISearchBar*)searchBar 
-{
-	searching_ = NO;
-	letUserSelectRow_ = YES;
-	self.tableView.scrollEnabled = YES;
-	
-	[overlayController_.view removeFromSuperview];
-	[searchBar resignFirstResponder];
-	
-	
-	// 検索キーワードから正規表現を作成
-	NSPredicate *predicate = nil;
-	if (![searchBar.text isEqualToString:@""]) {
-		// 入力されていなかったら、必ずマッチさせる
-		predicate = [NSPredicate predicateWithFormat:@"data CONTAINS[cd] %@", searchBar.text];
-	}
-	[[SimpleCoreDataFactory sharedCoreData] 
-	 setPredicate:simpleCoreData_.fetchedResultsController.fetchRequest WithPredicate:predicate];
-	[simpleCoreData_ performFetch];
-	
-	[self.tableView reloadData];
-}
-
-
-@end
-
-
-
-#pragma mark --- OverlayViewController ---
-#pragma mark -----------------------------
-
-@implementation OverlayViewController
-
-@synthesize rvController = rvController_;
-
-
-/*
- * オーバーレイヤがタップされたとき
- */
-
-- (void)touchesBegan:(NSSet *)touches withEvent:(UIEvent *)event {
-	[rvController_ searchKeyword:rvController_.navigationItem.titleView];
-}
-
-
-/*
- * メモリの容量が少ない時に呼び出される
- */
-
-- (void)didReceiveMemoryWarning {
-	[super didReceiveMemoryWarning]; // Releases the view if it doesn't have a superview
-	// Release anything that's not essential, such as cached data
-}
-
-
-/*
- * 後処理
- */
-
-- (void)dealloc {
-	[rvController_ release];
-	[super dealloc];
-}
 
 @end
