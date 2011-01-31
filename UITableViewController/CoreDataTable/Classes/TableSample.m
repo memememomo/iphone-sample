@@ -62,7 +62,8 @@
 						   forKeys:[NSArray arrayWithObjects:@"timeStamp", nil]]
 						  autorelease];
 	[factory setSortDescriptors:request AndSort:sort];
-	NSFetchedResultsController *fetchedResultController = [factory fetchedResultsController:request AndSectionNameKeyPath:nil];
+	NSFetchedResultsController *fetchedResultController = [factory fetchedResultsController:request 
+																	  AndSectionNameKeyPath:@"section"];
 	simpleCoreData_ = [factory createSimpleCoreData:fetchedResultController];
 	[simpleCoreData_ retain];
 	
@@ -70,6 +71,27 @@
 	// テストデータを作る
 	[self deleteTestData];
 	[self insertTestData];
+}
+
+
+/*
+ * セクション数を返す
+ */
+
+- (NSInteger)numberOfSectionsInTableView:(UITableView *)tableView
+{
+	return [[simpleCoreData_.fetchedResultsController sections] count];
+}
+
+
+/*
+ * セクション名を返す
+ */
+
+- (NSString *)tableView:(UITableView *)tableView titleForHeaderInSection:(NSInteger)section
+{
+	id<NSFetchedResultsSectionInfo> sectionInfo = [[simpleCoreData_.fetchedResultsController sections] objectAtIndex:section];
+	return [sectionInfo name];
 }
 
 
