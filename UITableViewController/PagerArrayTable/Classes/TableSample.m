@@ -182,14 +182,15 @@ cellForRowAtIndexPath:(NSIndexPath*)indexPath
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-	NSString *message = [items_ objectAtIndex:indexPath.row];
+	NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+	NSString *message = [items_ objectAtIndex:row];
 	
 	UIAlertView *alert = [[[UIAlertView alloc] init] autorelease];
 	alert.message = message;
 	[alert addButtonWithTitle:@"OK"];
 	[alert show];
 	
-
+	
 	// セレクトのハイライトを解除する
 	[tableView deselectRowAtIndexPath:indexPath animated:YES];
 }
@@ -204,13 +205,18 @@ commitEditingStyle:(UITableViewCellEditingStyle)editingStyle
 forRowAtIndexPath:(NSIndexPath *)indexPath
 {
 	if ( UITableViewCellEditingStyleDelete == editingStyle ) {
+		// ページャに合わせてデータの位置を計算
+		NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+		
 		// 削除
-		[items_ removeObjectAtIndex:indexPath.row];
+		[items_ removeObjectAtIndex:row];
 		
-		// テーブルから該当セルを削除
-		[tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath]
-						 withRowAnimation:UITableViewRowAnimationFade];
+		// テーブルから該当セルを削除(TODO:うまくいかない、デリート後のrowの数の返し方がよく分からない)
+		//deleteFlag_ = YES;
+		//[tableView deleteRowsAtIndexPaths:[NSArray arrayWithObject:indexPath]
+		//				 withRowAnimation:UITableViewRowAnimationFade];
 		
+		[tableView reloadData];
 	}
 }
 
