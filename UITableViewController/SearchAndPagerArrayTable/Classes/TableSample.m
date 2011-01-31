@@ -211,7 +211,10 @@ cellForRowAtIndexPath:(NSIndexPath*)indexPath
 
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath
 {
-	NSString *message = [[[items_ objectAtIndex:indexPath.row] allValues] objectAtIndex:0];
+	// ページャに合わせてデータの位置を計算
+	NSInteger row = (page_ * ROWS_IN_PAGE) + indexPath.row;
+	
+	NSString *message = [[[items_ objectAtIndex:row] allValues] objectAtIndex:0];
 	
 	UIAlertView *alert = [[[UIAlertView alloc] init] autorelease];
 	alert.message = message;
